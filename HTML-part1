@@ -132,4 +132,103 @@
   <script src="rosters_part1.js"></script>
   <script src="rosters_part2.js"></script>
   <script src="rosters_part3.js"></script>
-  <script src="rosters_part4.js"></script>
+  <script src="rosters_part4.js"></script>  <script>
+    const TEAMS = {
+      ARI:{name:"Arizona Cardinals",needs:["QB","OL","EDGE","CB"]},
+      ATL:{name:"Atlanta Falcons",needs:["WR","DL","LB","S"]},
+      BAL:{name:"Baltimore Ravens",needs:["OL","WR","EDGE","CB"]},
+      BUF:{name:"Buffalo Bills",needs:["DL","LB","CB","OL"]},
+      CAR:{name:"Carolina Panthers",needs:["EDGE","TE","OL","CB"]},
+      CHI:{name:"Chicago Bears",needs:["EDGE","OL","S","LB"]},
+      CIN:{name:"Cincinnati Bengals",needs:["OL","CB","S","TE"]},
+      CLE:{name:"Cleveland Browns",needs:["QB","OT","WR","LB"]},
+      DAL:{name:"Dallas Cowboys",needs:["RB","LB","CB","OT"]},
+      DEN:{name:"Denver Broncos",needs:["RB","LB","DL","TE"]},
+      DET:{name:"Detroit Lions",needs:["EDGE","CB","OG","LB"]},
+      GB:{name:"Green Bay Packers",needs:["CB","OL","DL","LB"]},
+      HOU:{name:"Houston Texans",needs:["OL","DT","TE","CB"]},
+      IND:{name:"Indianapolis Colts",needs:["QB","EDGE","WR","OL"]},
+      JAX:{name:"Jacksonville Jaguars",needs:["OL","RB","LB","TE"]},
+      KC:{name:"Kansas City Chiefs",needs:["OT","CB","DL","EDGE"]},
+      LV:{name:"Las Vegas Raiders",needs:["WR","CB","OL","DL"]},
+      LAR:{name:"Los Angeles Rams",needs:["QB","LB","OL","CB"]},
+      MIA:{name:"Miami Dolphins",needs:["QB","OL","CB","DT"]},
+      MIN:{name:"Minnesota Vikings",needs:["QB","CB","DT","LB"]},
+      NE:{name:"New England Patriots",needs:["OT","EDGE","TE","S"]},
+      NO:{name:"New Orleans Saints",needs:["QB","WR","EDGE","OG"]},
+      NYG:{name:"New York Giants",needs:["OL","WR","CB","LB"]},
+      NYJ:{name:"New York Jets",needs:["QB","WR","CB","OL"]},
+      PHI:{name:"Philadelphia Eagles",needs:["TE","CB","EDGE","OG"]},
+      PIT:{name:"Pittsburgh Steelers",needs:["QB","WR","OT","CB"]},
+      SF:{name:"San Francisco 49ers",needs:["OL","CB","S","WR"]},
+      SEA:{name:"Seattle Seahawks",needs:["EDGE","TE","LB","CB"]},
+      TB:{name:"Tampa Bay Buccaneers",needs:["EDGE","LB","CB","TE"]},
+      TEN:{name:"Tennessee Titans",needs:["EDGE","WR","OT","CB"]},
+      WAS:{name:"Washington Commanders",needs:["EDGE","CB","WR","OL"]}
+    };
+
+    const POS_MULT = {
+      QB: 1.65, EDGE: 1.32, OT: 1.28, LT: 1.30, RT: 1.25, WR: 1.24, CB: 1.22,
+      DT: 1.12, DE: 1.18, S: 1.04, LB: 1.00, OG: 1.02, LG: 1.02, RG: 1.02,
+      C: 1.04, TE: 0.96, RB: 0.88, FB: 0.65, K: 0.45, P: 0.40, LS: 0.30
+    };
+
+    const R1_ORDER = ["TEN","LAC","MIA","NYJ","PHI","NYJ","ARI","ATL","TB","NO","WAS","NYJ","HOU","BAL","LV","NE","SEA","CLE","CAR","CLE","DAL","NYG","PIT","DEN","CIN","PHI","MIN","TEN","KC","DET","SF","BUF"];
+    const R1_ORIG  = ["TEN","LAC","MIA","NYJ","PHI","IND","ARI","ATL","TB","NO","WAS","DAL","HOU","BAL","LV","NE","SEA","LAR","CAR","CLE","GB","NYG","PIT","DEN","CIN","JAX","MIN","CHI","KC","DET","SF","BUF"];
+
+    function richHillPick(pickNum) {
+      return Math.max(2, Math.round(1000 * Math.pow(0.968, pickNum - 1)));
+    }
+
+    function buildPicks() {
+      const picks = {};
+      Object.keys(TEAMS).forEach(t => picks[t] = []);
+      R1_ORDER.forEach((owner, idx) => {
+        const num = idx + 1;
+        const via = R1_ORIG[idx] !== owner ? ` (via ${R1_ORIG[idx]})` : "";
+        picks[owner].push({ id: `2027-1-${num}`, label: `2027 Rd 1 • Pick #${num}${via}`, val: richHillPick(num) });
+      });
+      Object.keys(TEAMS).forEach((t, i) => {
+        for (let r = 2; r <= 7; r++) {
+          const overall = (r - 1) * 32 + ((i % 32) + 1);
+          picks[t].push({ id: `2027-${r}-${t}`, label: `2027 Rd ${r} (Proj #${overall})`, val: richHillPick(overall) });
+        }
+       .forEach(r => {
+          const base = r === 1 ? 260 : r === 2 ? 110 : 52;
+          picks[t].push({ id: `2028-${r}-${t}`, label: `2028 Rd ${r} Pick`, val: base });
+        });
+      });
+      return picks;
+    }
+
+    const ALL_PICKS = buildPicks();
+
+    function calcPlayerVal(p, receivingTeam) {
+      const ovr = p.ovr || 72;
+      let base = ovr >= 95 ? 950 + (ovr - 95) * 180
+               : ovr >= 90 ? 560 + (ovr - 90) * 78
+               : ovr >= 85 ? 310 + (ovr - 85) * 50
+               : ovr >= 80 ? 140 + (ovr - 80) * 34
+               : ovr >= 75 ? 45 + (ovr - 75) * 19
+               : Math.max(8, (ovr - 60) * 3);
+      const mult = POS_MULT[p.pos] || 1.0;
+      let val = base * mult;
+      if (p.status === "IR") val *= 0.82;
+      const needs = TEAMS[receivingTeam]?.needs || [];
+      if (needs.includes(p.pos) || (needs.includes("OL") && ["LT","LG","C","RG","RT","OT","OG"].includes(p.pos))) {
+        val *= 1.15;
+      }
+      return Math.round(val);
+    }
+
+    const state = {
+      teamA: "LAC",
+      teamB: "MIN",
+      tabA: "ALL",
+      tabB: "ALL",
+      searchA: "",
+      searchB: "",
+      pkgA: [],
+      pkgB: []
+    };
+
