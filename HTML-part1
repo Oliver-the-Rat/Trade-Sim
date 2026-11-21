@@ -132,8 +132,8 @@
   <script src="rosters_part1.js"></script>
   <script src="rosters_part2.js"></script>
   <script src="rosters_part3.js"></script>
-  <script src="rosters_part4.js"></script>  <script>
-    const TEAMS = {
+  <script src="rosters_part4.js"></script>  
+  <script> const TEAMS = {
       ARI:{name:"Arizona Cardinals",needs:["QB","OL","EDGE","CB"]},
       ATL:{name:"Atlanta Falcons",needs:["WR","DL","LB","S"]},
       BAL:{name:"Baltimore Ravens",needs:["OL","WR","EDGE","CB"]},
@@ -230,5 +230,155 @@
       searchB: "",
       pkgA: [],
       pkgB: []
-    };
+    };    function packageTotal(pkg, receivingTeam) {
+      let sum = 0;
+      let playerCount = 0;
+      pkg.forEach(item => {
+        if (item.type === "player") {
+          playerCount++;
+          const penalty = playerCount > 2 ? Math.pow(0.84, playerCount - 2) : 1;
+          sum += calcPlayerVal(item.data, receivingTeam) * penalty;
+        } else {
+          sum += item.data.val;
+        }
+      });
+      return Math.round(sum);
+    }
+
+    function toggleItem(side, type, id) {
+      const key = side === "A" ? "pkgA" : "pkgB";
+      const team = side === "A" ? state.teamA : state.teamB;
+      const idx = state[key].findIndex(x => x.id === id);
+      if (idx >= 0) {
+        state[key].splice(idx, 1);
+      } else {
+        if (type === "player") {
+          const p = (window.NFL_ROSTERS[team] || []).find(pl => pl.name === id);
+          if (p) state[key].push({ id, type: "player", data: p });
+        } else {
+          const pk = (ALL_PICKS[team] || []).find(x => x.id === id);
+          if (pk) state[key].push({ id, type: "pick", data: pk });
+        }
+      }
+      render();
+    }
+
+    function resetTrade() {
+      state.pkgA = [];
+      state.pkgB = [];
+      render();
+    }
+
+    function proposeTrade() {
+      const valA = packageTotal(state.pkgA, state.teamB);
+      const valB = packageTotal(state.pkgB, state.teamA);
+      if (!valA && !valB) return alert("Add players or draft picks to both sides first.");
+      const ratio = valA / Math.max(1, valB);
+      if (ratio >= 0.94 && ratio <= 1.25) {
+        alert(`✅ TRADE ACCEPTED! Both ${TEAMS[state.teamA].name} and ${TEAMS[state.teamB].name} approved the deal.`);
+      } else if (ratio < 0.94) {
+        alert(`❌ ${TEAMS[state.teamB].name} REJECTED: They need more value (${valA} pts offered vs ${valB} pts requested).`);
+      } else {
+        alert(`⚠️ ${TEAMS[state.teamA].name} FRONT OFFICE WARNING: You are overpaying (${valA} pts vs ${valB} pts), though ${TEAMS[state.teamB].name} would accept.`);
+      }
+    }
+
+    function renderSide(side) {
+      const isA = side === "A";
+      const team = isA ? state.teamA : state.teamB;
+      const otherTeam = isA ? state.teamB : state.teamA;
+      const tab = isA ? state.tabA : state.tabB;
+      const search = (isA ? state.searchA : state.searchB).toLowerCase();
+      const pkg = isA ? state.pkgA : state.pkgB;
+      const roster = window.NFL_ROSTERS[team] || [];
+      const picks = ALL_PICKS[team] || [];
+
+      const options = Object.keys(TEAMS).map(k =>
+        `<option value="${k}" ${k === team ? "selected" : ""}>${k} — ${TEAMS[k].name}</option>`
+      ).join("");
+
+      const needsHtml = TEAMS[team].needs.map(n => `<span class="tag">Need: ${n}</span>`).join("");
+
+      const pkgHtml = pkg.length === 0
+        ? `<div style="color:var(--muted);font-size:0.78rem;padding:10px 4px;">Tap players or picks below to add...</div>`
+        : pkg.map(item => {
+            const label = item.type === "player" ? `${item.data.name} (${item.data.pos} • ${item.data.ovr})` : item.data.label;
+            const pts = item.type === "player" ? calcPlayerVal(item.data, otherTeam) : item.data.val;
+            return `<div class="pkg-item" onclick="toggleItem('${side}','${item.type}','${item.id.replace(/'/g,"\\'")}')">
+              <span>${label}</span><span class="val">${pts} pts ✕</span>
+            </div>`;
+          }).join("");
+
+      const tabs = ["ALL","OFF","DEF","ST","PICKS"].map(t =>
+        `<button class="tab ${tab === t ? "active" : ""}" onclick="state.${isA?"tabA":"tabB"}='${t}';render()">${t}</button>`
+      ).join("");
+
+      let itemsHtml = "";
+      if (tab === "PICKS") {
+        itemsHtml = picks.map(pk => `
+          <div class="row" onclick="toggleItem('${side}','pick','${pk.id}')">
+            <span>${pk.label}</span>
+            <span class="val">${pk.val} pts</span>
+          </div>`).join("");
+      } else {
+        const filtered = roster.filter(p => {
+          if (search && !p.name.toLowerCase().includes(search) && !p.pos.toLowerCase().includes(search)) return false;
+          if (tab === "OFF") return ["QB","RB","FB","WR","TE","LT","LG","C","RG","RT","OL","OT","OG"].includes(p.pos);
+          if (tab === "DEF") return ["EDGE","DE","DT","NT","LB","CB","S","NB"].includes(p.pos);
+          if (tab === "ST") return ["K","P","LS"].includes(p.pos);
+          return true;
+        });
+        itemsHtml = filtered.length ? filtered.map(p => {
+          const stBadge = p.status === "IR" ? `<span class="badge-ir">IR</span>` : p.status === "Q" ? `<span class="badge-q">Q</span>` : "";
+          return `<div class="row" onclick="toggleItem('${side}','player','${p.name.replace(/'/g,"\\'")}')">
+            <span><strong>${p.name}</strong> <span style="color:var(--muted)">(${p.pos} • ${p.ovr} OVR)</span>${stBadge}</span>
+            <span class="val">${calcPlayerVal(p, otherTeam)} pts</span>
+          </div>`;
+        }).join("") : `<div style="color:var(--muted);font-size:0.8rem;padding:12px;">Load rosters_part1–4.js to view all 53 players.</div>`;
+      }
+
+      document.getElementById(isA ? "boxA" : "boxB").innerHTML = `
+        <select onchange="state.${isA?"teamA":"teamB"}=this.value;state.${isA?"pkgA":"pkgB"}=[];render()">${options}</select>
+        <div class="needs-row">${needsHtml} <span class="tag">${roster.length} Active</span></div>
+        <div class="package">${pkgHtml}</div>
+        <input type="text" placeholder="Search player or position..." value="${isA?state.searchA:state.searchB}" oninput="state.${isA?"searchA":"searchB"}=this.value;render()" />
+        <div class="tabs">${tabs}</div>
+        <div class="list">${itemsHtml}</div>
+      `;
+    }
+
+    function render() {
+      renderSide("A");
+      renderSide("B");
+      const valA = packageTotal(state.pkgA, state.teamB);
+      const valB = packageTotal(state.pkgB, state.teamA);
+      document.getElementById("scoreText").textContent = `${state.teamA}: ${valA} vs ${state.teamB}: ${valB} pts`;
+      const fill = document.getElementById("barFill");
+      const status = document.getElementById("statusText");
+      if (!valA && !valB) {
+        fill.style.width = "50%";
+        fill.style.background = "var(--yellow)";
+        status.textContent = "Add assets to evaluate trade";
+      } else {
+        const pct = Math.min(100, Math.max(8, Math.round((valA / Math.max(1, valA + valB)) * 100)));
+        fill.style.width = pct + "%";
+        const ratio = valA / Math.max(1, valB);
+        if (ratio >= 0.94 && ratio <= 1.25) {
+          fill.style.background = "var(--green)";
+          status.textContent = "Fair Deal — Likely Accepted";
+        } else if (ratio < 0.94) {
+          fill.style.background = "var(--red)";
+          status.textContent = `${state.teamB} Wants More Value`;
+        } else {
+          fill.style.background = "var(--yellow)";
+          status.textContent = `${state.teamA} Overpaying`;
+        }
+      }
+    }
+
+    render();
+  </script>
+</body>
+</html>
+
 
